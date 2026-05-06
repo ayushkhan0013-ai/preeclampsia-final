@@ -1,11 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
-git commit -m "Simplify to daylight mode only"
-git push origin branchimport streamlit as st
-import pandas as pd
-import numpy as np
 import json
 import os
 from datetime import datetime, timedelta
