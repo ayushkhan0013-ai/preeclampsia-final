@@ -832,7 +832,108 @@ if uploaded_report:
         st.sidebar.success("✅ Values extracted - review in tabs")
 
 st.sidebar.markdown("---")
+st.sidebar.markdown("### 👤 Patient Information")
+patient_id = st.sidebar.text_input("Patient ID", value="PT_" + datetime.now().strftime("%Y%m%d_%H%M%S"), help="Unique patient identifier")
 visit_date = st.sidebar.date_input("📅 Visit Date", value=datetime.now())
+
+# ============================================================================
+# PATIENT RECORDS MANAGER TERMINAL
+# ============================================================================
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 💾 Patient Records Manager")
+record_action = st.sidebar.selectbox(
+    "Patient Records",
+    options=["📋 View Records", "💾 Save This Visit", "📂 Load Previous Visit", "🗑️ Delete Record"],
+    key="record_action"
+)
+
+visits = load_patient_visits()
+
+if record_action == "📋 View Records":
+    st.sidebar.markdown("**All Patient Records:**")
+    patient_visits = {k: v for k, v in visits.items() if k.startswith(patient_id)}
+    
+    if patient_visits:
+        for visit_key, visit_data in sorted(patient_visits.items(), reverse=True):
+            col1, col2 = st.sidebar.columns([3, 1])
+            with col1:
+                st.sidebar.write(f"📅 {visit_data.get('date', 'N/A')} - Risk: {visit_data.get('risk_score', 'N/A'):.1f}%")
+            with col2:
+                if st.sidebar.button("📖", key=f"view_{visit_key}", help="Load this visit"):
+                    st.session_state.selected_visit = visit_key
+                    st.rerun()
+        
+        if st.sidebar.button("📥 Export All Records", use_container_width=True):
+            export_df = pd.DataFrame([
+                {
+                    'Visit Date': v.get('date', ''),
+                    'Risk Score (%)': f"{v.get('risk_score', 0):.1f}",
+                    'Model': v.get('model', ''),
+                    'Patient ID': k.split('_')[0]
+                }
+                for k, v in patient_visits.items()
+            ])
+            csv = export_df.to_csv(index=False)
+            st.sidebar.download_button(
+                label="📥 Download CSV",
+                data=csv,
+                file_name=f"patient_records_{patient_id}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+    else:
+        st.sidebar.info("ℹ️ No records found for this patient")
+
+elif record_action == "💾 Save This Visit":
+    if st.sidebar.button("Save Current Assessment", use_container_width=True):
+        risk_data = {'Composite': 50.0}  # Will be calculated below
+        visit_key = f"{patient_id}_{visit_date}"
+        visits[visit_key] = {
+            'date': str(visit_date),
+            'risk_score': risk_data.get('Composite', 0),
+            'model': "Will be set",
+            'params': {}
+        }
+        save_patient_visits(visits)
+        st.sidebar.success(f"✅ Visit saved for patient {patient_id}")
+
+elif record_action == "📂 Load Previous Visit":
+    patient_visits = {k: v for k, v in visits.items() if k.startswith(patient_id)}
+    if patient_visits:
+        selected = st.sidebar.selectbox(
+            "Select visit to load",
+            options=sorted(patient_visits.keys(), reverse=True),
+            format_func=lambda x: f"{patient_visits[x].get('date', 'N/A')} - Risk: {patient_visits[x].get('risk_score', 0):.1f}%"
+        )
+        if st.sidebar.button("📂 Load Visit", use_container_width=True):
+            visit_data = patient_visits[selected]
+            if 'params' in visit_data:
+                st.session_state.params.update(visit_data['params'])
+            st.sidebar.success(f"✅ Loaded visit from {visit_data.get('date', 'N/A')}")
+            st.rerun()
+    else:
+        st.sidebar.info("ℹ️ No previous visits found")
+
+elif record_action == "🗑️ Delete Record":
+    patient_visits = {k: v for k, v in visits.items() if k.startswith(patient_id)}
+    if patient_visits:
+        selected = st.sidebar.selectbox(
+            "Select record to delete",
+            options=sorted(patient_visits.keys(), reverse=True),
+            format_func=lambda x: f"{patient_visits[x].get('date', 'N/A')} - Risk: {patient_visits[x].get('risk_score', 0):.1f}%"
+        )
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            if st.button("🗑️ Delete", use_container_width=True):
+                del visits[selected]
+                save_patient_visits(visits)
+                st.sidebar.success(f"✅ Record deleted")
+                st.rerun()
+        with col2:
+            if st.button("❌ Cancel", use_container_width=True):
+                st.rerun()
+    else:
+        st.sidebar.info("ℹ️ No records to delete")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### ⚙️ Configuration")
@@ -1359,7 +1460,7 @@ with tabs[8]:
             elif val == 'MODERATE': return 'background-color: rgba(255,165,2,0.15)'
             else: return 'background-color: rgba(46,213,115,0.15)'
         
-        styled_df = test_df.style.applymap(color_priority, subset=['Priority'])
+        styled_df = test_df.style.map(color_priority, subset=['Priority'])
         st.dataframe(styled_df, use_container_width=True)
     else:
         st.info("No additional testing urgently recommended at this time. Standard prenatal screening applies.")
